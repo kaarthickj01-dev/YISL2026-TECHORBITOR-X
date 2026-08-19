@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Tech Orbitors X - Driving Simulator</title>
+    <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+    <script>
+        // Web Audio Synth for procedural engine hum and crash explosion
+        var audioCtx = null;
+        var osc = null;
+        var gainNode = null;
+
+        function initEngineSound() {
+            if (audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                osc = audioCtx.createOscillator();
+                gainNode = audioCtx.createGain();
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(45, audioCtx.currentTime); // Low engine idle rumble
+                
+                var filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(160, audioCtx.currentTime);
+                
+                osc.connect(filter);
+                filter.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // Silent initially
+                osc.start();
+            } catch (e) {
+                console.error("AudioContext is not supported in this browser:", e);
+            }
+        }
+
+        function setEnginePitch(speedRatio) {
+            if (!audioCtx) return;
+            // Pitch rises from 45Hz at idle to 160Hz at full speed
+            var pitch = 45 + (speedRatio * 115);
+            osc.frequency.setTargetAtTime(pitch, audioCtx.currentTime, 0.1);
+            // Volume rises slightly with acceleration
+            var volume = 0.04 + (speedRatio * 0.14);
+            gainNode.gain.setTargetAtTime(volume, audioCtx.currentTime, 0.1);
+        }
+
+        function stopEngineSound() {
+            if (gainNode) {
+                gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.15);
+            }
+        }
+
+        function playCrashSound() {
+            if (!audioCtx) return;
+            try {
+                // Synthesized crash blast using low frequency rumble and fast drop-off
+                var oscNoise = audioCtx.createOscillator();
+                var gainNoise = audioCtx.createGain();
+                
+                oscNoise.type = 'triangle';
+                oscNoise.frequency.setValueAtTime(130, audioCtx.currentTime);
+                oscNoise.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.5);
+                
+                gainNoise.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                gainNoise.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                
+                oscNoise.connect(gainNoise);
+                gainNoise.connect(audioCtx.destination);
+                
+                oscNoise.start();
+                oscNoise.stop(audioCtx.currentTime + 0.6);
+            } catch (e) {
+                console.error("Crash audio playback error:", e);
+            }
+        }
+
+        // endless-road component wraps roadside/road items back in front of the car
+        AFRAME.registerComponent('endless-road', {
+            schema: {
+                spacing: {type: 'number', default: 40},
+                count: {type: 'number', default: 10}
+            },
+            tick: function () {
+                var carRig = document.querySelector('#car-rig');
+                if (!carRig) return;
+                var carPos = carRig.getAttribute('position');
+                var el = this.el;
+                var pos = el.getAttribute('position');
+                
+                // If the car has driven past this element, wrap it around in front
+                if (pos.z - carPos.z > 30) {
+                    pos.z -= this.data.spacing * this.data.count;
+                    el.setAttribute('position', pos);
+                }
+            }
+        });
+
+        // Dynamic generator that populates the endless highway assets
+        AFRAME.registerComponent('world-generator', {
+            init: function () {
+                var scene = this.el;
+                var spacing = 40;
+                var count = 11;
+                
+                for (var i = 0; i < count; i++) {
+                    var z = -i * spacing;
+                    
+                    // 1. Road segment
+                    var road = document.createElement('a-plane');
+                    road.setAttribute('width', '6');
+                    road.setAttribute('height', '40');
+                    road.setAttribute('position', {x: 0, y: -0.01, z: z});
+                    road.setAttribute('rotation', '-90 0 0');
+                    road.setAttribute('color', '#14141e');
+                    road.setAttribute('material', 'roughness: 0.95');
+                    road.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(road);
+                    
+                    // 2. Dashed yellow divider lines
+                    var line = document.createElement('a-plane');
+                    line.setAttribute('width', '0.12');
+                    line.setAttribute('height', '5');
+                    line.setAttribute('position', {x: 0, y: 0.015, z: z});
+                    line.setAttribute('rotation', '-90 0 0');
+                    line.setAttribute('color', '#ffea00');
+                    line.setAttribute('material', 'shader: flat');
+                    line.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(line);
+                    
+                    // 3. Cyber Pine Left
+                    var treeL = document.createElement('a-cone');
+                    treeL.setAttribute('radius-bottom', '0.65');
+                    treeL.setAttribute('radius-top', '0');
+                    treeL.setAttribute('height', '2.5');
+                    treeL.setAttribute('position', {x: -5, y: 1.25, z: z});
+                    treeL.setAttribute('color', '#0d3228');
+                    treeL.setAttribute('material', 'roughness: 0.8');
+                    treeL.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(treeL);
+                    
+                    // 4. Cyber Pine Right
+                    var treeR = document.createElement('a-cone');
+                    treeR.setAttribute('radius-bottom', '0.65');
+                    treeR.setAttribute('radius-top', '0');
+                    treeR.setAttribute('height', '2.5');
+                    treeR.setAttribute('position', {x: 5, y: 1.25, z: z - 20}); // offset to stagger spacing
+                    treeR.setAttribute('color', '#0d3228');
+                    treeR.setAttribute('material', 'roughness: 0.8');
+                    treeR.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(treeR);
+
+                    // 5. Left Neon Posts
+                    var lightL = document.createElement('a-box');
+                    lightL.setAttribute('width', '0.12');
+                    lightL.setAttribute('height', '4');
+                    lightL.setAttribute('depth', '0.12');
+                    lightL.setAttribute('position', {x: -4.2, y: 2, z: z});
+                    lightL.setAttribute('color', '#ff00ff');
+                    lightL.setAttribute('material', 'emissive: #ff00ff; emissiveIntensity: 0.8; shader: flat');
+                    lightL.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(lightL);
+
+                    // 6. Right Neon Posts
+                    var lightR = document.createElement('a-box');
+                    lightR.setAttribute('width', '0.12');
+                    lightR.setAttribute('height', '4');
+                    lightR.setAttribute('depth', '0.12');
+                    lightR.setAttribute('position', {x: 4.2, y: 2, z: z - 20});
+                    lightR.setAttribute('color', '#00ffff');
+                    lightR.setAttribute('material', 'emissive: #00ffff; emissiveIntensity: 0.8; shader: flat');
+                    lightR.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(lightR);
+
+                    // 7. Left Guardrail
+                    var railL = document.createElement('a-box');
+                    railL.setAttribute('width', '0.1');
+                    railL.setAttribute('height', '0.4');
+                    railL.setAttribute('depth', '40');
+                    railL.setAttribute('position', {x: -3.05, y: 0.2, z: z});
+                    railL.setAttribute('color', '#ff0055');
+                    railL.setAttribute('material', 'emissive: #ff0055; emissiveIntensity: 0.4; shader: flat');
+                    railL.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(railL);
+
+                    // 8. Right Guardrail
+                    var railR = document.createElement('a-box');
+                    railR.setAttribute('width', '0.1');
+                    railR.setAttribute('height', '0.4');
+                    railR.setAttribute('depth', '40');
+                    railR.setAttribute('position', {x: 3.05, y: 0.2, z: z});
+                    railR.setAttribute('color', '#ff0055');
+                    railR.setAttribute('material', 'emissive: #ff0055; emissiveIntensity: 0.4; shader: flat');
+                    railR.setAttribute('endless-road', `spacing: ${spacing}; count: ${count}`);
+                    scene.appendChild(railR);
+                }
+            }
+        });
+
+        // Obstacle vehicle component representing road obstructions
+        AFRAME.registerComponent('obstacle-car', {
+            schema: {
+                speed: {type: 'number', default: 8}
+            },
+            init: function () {
+                var el = this.el;
+                
+                // Construct obstacle vehicle chassis
+                var chassis = document.createElement('a-box');
+                chassis.setAttribute('width', '1.2');
+                chassis.setAttribute('height', '0.4');
+                chassis.setAttribute('depth', '2.2');
+                chassis.setAttribute('color', '#ff5722');
+                chassis.setAttribute('material', 'roughness: 0.5; metalness: 0.8');
+                el.appendChild(chassis);
+
+                // Cockpit Cabin
+                var cabin = document.createElement('a-box');
+                cabin.setAttribute('width', '0.85');
+                cabin.setAttribute('height', '0.35');
+                cabin.setAttribute('depth', '1.1');
+                cabin.setAttribute('position', '0 0.35 -0.15');
+                cabin.setAttribute('color', '#0d0d12');
+                cabin.setAttribute('material', 'roughness: 0.2');
+                el.appendChild(cabin);
+
+                // Taillights facing behind
+                var lightL = document.createElement('a-sphere');
+                lightL.setAttribute('radius', '0.07');
+                lightL.setAttribute('color', '#ff0000');
+                lightL.setAttribute('material', 'emissive: #ff0000; emissiveIntensity: 1.0; shader: flat');
+                lightL.setAttribute('position', '-0.45 0 1.11');
+                el.appendChild(lightL);
+
+                var lightR = document.createElement('a-sphere');
+                lightR.setAttribute('radius', '0.07');
+                lightR.setAttribute('color', '#ff0000');
+                lightR.setAttribute('material', 'emissive: #ff0000; emissiveIntensity: 1.0; shader: flat');
+                lightR.setAttribute('position', '0.45 0 1.11');
+                el.appendChild(lightR);
+
+                this.resetPosition();
+            },
+            resetPosition: function () {
+                var el = this.el;
+                var carRig = document.querySelector('#car-rig');
+                var carZ = carRig ? carRig.getAttribute('position').z : 0;
+
+                // Randomize lanes: Left (-1.8), Center (0), Right (1.8)
+                var lanes = [-1.8, 0, 1.8];
+                var randomLane = lanes[Math.floor(Math.random() * lanes.length)];
+                
+                // Position staggered ahead: between 60 to 180 units in front
+                var randomZ = carZ - (60 + Math.random() * 120);
+
+                el.setAttribute('position', {x: randomLane, y: 0.2, z: randomZ});
+
+                // Randomize obstacle car base color
+                var colors = ['#ff5722', '#ff1744', '#f50057', '#d500f9', '#ffea00'];
+                var colorVal = colors[Math.floor(Math.random() * colors.length)];
+                el.querySelector('a-box').setAttribute('color', colorVal);
+            },
+            tick: function (time, timeDelta) {
+                var dt = timeDelta / 1000;
+                if (!dt) return;
+
+                var el = this.el;
+                var pos = el.getAttribute('position');
+                var carRig = document.querySelector('#car-rig');
+                if (!carRig) return;
+                var carPos = carRig.getAttribute('position');
+                var controller = carRig.components['car-controller'];
+
+                // If game is over, stop moving
+                if (controller && controller.isGameOver) return;
+
+                // Move obstacles forward at a slower pace
+                pos.z -= this.data.speed * dt;
+                el.setAttribute('position', pos);
+
+                // If passed by the player, recycle forward
+                if (pos.z - carPos.z > 30) {
+                    this.resetPosition();
+                }
+            }
+        });
+
+        // Car controls, collision, and game-state controller
+        AFRAME.registerComponent('car-controller', {
+            init: function () {
+                var el = this.el;
+                this.speed = 0;
+                this.maxSpeed = 28; // units/second
+                this.acceleration = 14;
+                this.deceleration = 8;
+                this.steerSpeed = 6.5;
+                
+                this.isEngineOn = false;
+                this.isGameOver = false;
+                this.keys = {};
+
+                // Register input events
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.key.toLowerCase()] = true;
+                    initEngineSound();
+                });
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.key.toLowerCase()] = false;
+                });
+
+                // Dashboard interactive controls
+                var btnEngine = document.querySelector('#btn-engine');
+                btnEngine.addEventListener('click', () => {
+                    initEngineSound();
+                    
+                    if (this.isGameOver) {
+                        // Reset Game Over sequence
+                        this.isGameOver = false;
+                        this.isEngineOn = true;
+                        this.speed = 0;
+
+                        // Reset player position rig
+                        el.setAttribute('position', {x: 0, y: 0, z: 0});
+
+                        // Reset all obstacle traffic vehicles
+                        var obstacles = document.querySelectorAll('[obstacle-car]');
+                        for (var i = 0; i < obstacles.length; i++) {
+                            obstacles[i].components['obstacle-car'].resetPosition();
+                        }
+
+                        // Hide GameOver panel
+                        var gameOverPanel = document.querySelector('#game-over-panel');
+                        gameOverPanel.setAttribute('visible', 'false');
+
+                        // Set button green active state
+                        btnEngine.setAttribute('color', '#39ff14');
+                        btnEngine.querySelector('a-text').setAttribute('value', 'STOP ENGINE');
+                        setEnginePitch(0);
+                    } else {
+                        // Normal engine toggle
+                        this.isEngineOn = !this.isEngineOn;
+                        if (this.isEngineOn) {
+                            btnEngine.setAttribute('color', '#39ff14');
+                            btnEngine.querySelector('a-text').setAttribute('value', 'STOP ENGINE');
+                            setEnginePitch(0);
+                        } else {
+                            btnEngine.setAttribute('color', '#ff3333');
+                            btnEngine.querySelector('a-text').setAttribute('value', 'START ENGINE');
+                            this.speed = 0;
+                            stopEngineSound();
+                        }
+                    }
+                });
+            },
+            triggerGameOver: function (reason) {
+                this.isGameOver = true;
+                this.isEngineOn = false;
+                this.speed = 0;
+
+                // Play collision audio feedbacks
+                stopEngineSound();
+                playCrashSound();
+
+                // Make the red HUD Game Over panel visible
+                var gameOverPanel = document.querySelector('#game-over-panel');
+                var reasonText = document.querySelector('#game-over-reason');
+                reasonText.setAttribute('value', reason || "COLLIDED!");
+                gameOverPanel.setAttribute('visible', 'true');
+
+                // Reconfigure dashboard engine button to serve as warning status
+                var btnEngine = document.querySelector('#btn-engine');
+                btnEngine.setAttribute('color', '#ff3333');
+                btnEngine.querySelector('a-text').setAttribute('value', 'CRASHED');
+
+                // Auto-restart scene after 1.5 seconds
+                setTimeout(() => {
+                    this.isGameOver = false;
+                    this.isEngineOn = true;
+                    this.speed = 0;
+
+                    // Reset player position rig
+                    this.el.setAttribute('position', {x: 0, y: 0, z: 0});
+
+                    // Reset all obstacle traffic vehicles
+                    var obstacles = document.querySelectorAll('[obstacle-car]');
+                    for (var i = 0; i < obstacles.length; i++) {
+                        obstacles[i].components['obstacle-car'].resetPosition();
+                    }
+
+                    // Hide GameOver panel
+                    gameOverPanel.setAttribute('visible', 'false');
+
+                    // Set button green active state
+                    btnEngine.setAttribute('color', '#39ff14');
+                    btnEngine.querySelector('a-text').setAttribute('value', 'STOP ENGINE');
+                    setEnginePitch(0);
+                }, 1500);
+            },
+            tick: function (time, timeDelta) {
+                var dt = timeDelta / 1000;
+                if (!dt || dt > 0.1) return;
+
+                var el = this.el;
+                var steeringWheel = document.querySelector('#steering-wheel');
+                var speedText = document.querySelector('#speed-text');
+                
+                var pos = el.getAttribute('position');
+                
+                // Read controls
+                var gas = this.keys['w'] || this.keys['arrowup'];
+                var brake = this.keys['s'] || this.keys['arrowdown'];
+                var steerLeft = this.keys['a'] || this.keys['arrowleft'];
+                var steerRight = this.keys['d'] || this.keys['arrowright'];
+
+                if (this.isEngineOn && !this.isGameOver) {
+                    // Acceleration / Deceleration
+                    if (gas) {
+                        this.speed = Math.min(this.speed + this.acceleration * dt, this.maxSpeed);
+                    } else if (brake) {
+                        this.speed = Math.max(this.speed - this.acceleration * 1.5 * dt, -this.maxSpeed / 3);
+                    } else {
+                        // Friction
+                        if (this.speed > 0) this.speed = Math.max(this.speed - this.deceleration * dt, 0);
+                        if (this.speed < 0) this.speed = Math.min(this.speed + this.deceleration * dt, 0);
+                    }
+
+                    // Steer logic (requires vehicle movement)
+                    var targetSteerAngle = 0;
+                    if (this.speed !== 0) {
+                        var moveFactor = this.speed > 0 ? 1 : -1;
+                        if (steerLeft) {
+                            pos.x = Math.max(pos.x - this.steerSpeed * dt * moveFactor, -3.5);
+                            targetSteerAngle = 45;
+                        } else if (steerRight) {
+                            pos.x = Math.min(pos.x + this.steerSpeed * dt * moveFactor, 3.5);
+                            targetSteerAngle = -45;
+                        }
+                    }
+
+                    // Check 4-sided boundary limits (road width is 6m, edge at ±3m, car width 1.2m)
+                    if (Math.abs(pos.x) > 2.4) {
+                        this.triggerGameOver("HIT SIDE BARRIER!");
+                    }
+                    if (pos.z > 6.8) {
+                        this.triggerGameOver("HIT BACK WALL!");
+                    }
+                    if (pos.z < -393.8) {
+                        this.triggerGameOver("HIT FRONT WALL!");
+                    }
+
+                    // Move vehicle along Z-axis (-Z direction is forward)
+                    pos.z -= this.speed * dt;
+
+                    // Animate Steering Wheel rotation smoothly
+                    var currentRot = steeringWheel.getAttribute('rotation') || {x: -20, y: 0, z: 0};
+                    var newZ = currentRot.z + (targetSteerAngle - currentRot.z) * 0.15;
+                    steeringWheel.setAttribute('rotation', {x: -20, y: 0, z: newZ});
+
+                    // Pitch engine sound based on speed ratio
+                    var speedRatio = Math.abs(this.speed) / this.maxSpeed;
+                    setEnginePitch(speedRatio);
+
+                    // Check collisions against active obstacles on the road
+                    var obstacles = document.querySelectorAll('[obstacle-car]');
+                    for (var i = 0; i < obstacles.length; i++) {
+                        var obsPos = obstacles[i].getAttribute('position');
+                        var distZ = Math.abs(pos.z - obsPos.z);
+                        var distX = Math.abs(pos.x - obsPos.x);
+
+                        // Car bounding box collision parameters
+                        if (distX < 1.25 && distZ < 2.2) {
+                            this.triggerGameOver("COLLIDED!");
+                            break;
+                        }
+                    }
+                } else if (!this.isGameOver) {
+                    // Decelerate to stop if engine is off
+                    if (this.speed > 0) this.speed = Math.max(this.speed - this.deceleration * 2 * dt, 0);
+                    if (this.speed < 0) this.speed = Math.min(this.speed + this.deceleration * 2 * dt, 0);
+                    pos.z -= this.speed * dt;
+                }
+
+                // Update Dashboard Speedometer Display
+                var mphSpeed = Math.round(Math.abs(this.speed) * 3.8);
+                speedText.setAttribute('value', mphSpeed + " MPH");
+
+                // Set coordinates on rig
+                el.setAttribute('position', pos);
+            }
+        });
+    </script>
+</head>
+
+<body>
+    <a-scene world-generator>
+        <!-- Futuristic neon sky background -->
+        <a-sky color="#03030b"></a-sky>
+
+        <!-- Dynamic horizon skyline structures (fixed at background depth) -->
+        <a-entity position="0 0 0" id="horizon-scenery">
+            <a-cone position="-15 5 -120" radius-bottom="12" height="24" color="#050518" material="wireframe: true; opacity: 0.1"></a-cone>
+            <a-cone position="15 5 -140" radius-bottom="15" height="30" color="#050518" material="wireframe: true; opacity: 0.1"></a-cone>
+            <a-plane position="0 -1.4 -100" rotation="-90 0 0" width="80" height="80" color="#00ffff" material="wireframe: true; opacity: 0.05"></a-plane>
+        </a-entity>
+
+        <!-- Ambient Cyberpunk Skyline Title -->
+        <a-text value="TECH ORBITORS X" position="0 6 -15" align="center" color="#00ffcc" font="mozillavr" width="16" scale="1.1 1.1 1.1"></a-text>
+        <a-text value="ENGINE START REQUIRED TO DRIVE" position="0 4.8 -15" align="center" color="#8888aa" font="mozillavr" width="10" scale="0.55 0.55 0.55"></a-text>
+
+        <!-- Obstacle Traffic Vehicles on the Highway -->
+        <a-entity obstacle-car="speed: 8" id="obstacle-1"></a-entity>
+        <a-entity obstacle-car="speed: 10" id="obstacle-2"></a-entity>
+        <a-entity obstacle-car="speed: 6.5" id="obstacle-3"></a-entity>
+        <a-entity obstacle-car="speed: 9" id="obstacle-4"></a-entity>
+        <a-entity obstacle-car="speed: 7.5" id="obstacle-5"></a-entity>
+        <a-entity obstacle-car="speed: 11" id="obstacle-6"></a-entity>
+
+        <!-- Physical End Barriers (Back and Front walls of the road track) -->
+        <a-box id="back-barrier" width="6.2" height="2.5" depth="0.2" position="0 1.25 8" color="#ff0055" material="emissive: #ff0055; emissiveIntensity: 0.5"></a-box>
+        <a-box id="front-barrier" width="6.2" height="3" depth="0.2" position="0 1.5 -395" color="#ff0055" material="emissive: #ff0055; emissiveIntensity: 0.6"></a-box>
+
+        <!-- Car Rig: The vehicle inside which the user sits -->
+        <a-entity id="car-rig" position="0 0 0" car-controller>
+            
+            <!-- COCKPIT DASHBOARD SYSTEM -->
+            <a-entity position="0 0.45 -0.45">
+                
+                <!-- Windshield Cockpit structural bars -->
+                <a-box width="1.4" height="0.03" depth="0.03" position="0 1.1 -0.15" color="#181822"></a-box>
+                <a-box width="0.03" height="1.0" depth="0.03" position="-0.7 0.65 -0.12" rotation="0 0 -15" color="#181822"></a-box>
+                <a-box width="0.03" height="1.0" depth="0.03" position="0.7 0.65 -0.12" rotation="0 0 15" color="#181822"></a-box>
+
+                <!-- Center Dashboard Console Panel -->
+                <a-box width="1.4" height="0.4" depth="0.5" position="0 0.15 -0.1" color="#11111a" material="roughness: 0.95"></a-box>
+                <!-- Glowing cyan strip line on dashboard -->
+                <a-plane width="1.4" height="0.015" position="0 0.35 0.151" material="color: #00ffff; shader: flat"></a-plane>
+
+                <!-- Speedometer Display Panel -->
+                <a-plane width="0.25" height="0.12" position="-0.28 0.22 0.152" color="#030308" material="roughness: 0.8">
+                    <a-text id="speed-text" value="0 MPH" align="center" position="0 0 0.005" scale="0.18 0.18 0.18" color="#39ff14" font="mozillavr"></a-text>
+                </a-plane>
+                <!-- Speed label -->
+                <a-text value="SPEED" align="center" position="-0.28 0.3 0.152" scale="0.1 0.1 0.1" color="#888" font="mozillavr"></a-text>
+
+                <!-- Start/Stop Engine Interactive Button -->
+                <a-entity position="0.28 0.22 0.152">
+                    <a-box id="btn-engine" class="clickable" width="0.22" height="0.1" depth="0.03" color="#ff3333"
+                           animation__click="property: scale; from: 0.9 0.9 0.9; to: 1 1 1; startEvents: click; dur: 100">
+                        <a-text value="START ENGINE" align="center" position="0 0 0.016" scale="0.11 0.11 0.11" color="#ffffff" font="mozillavr"></a-text>
+                    </a-box>
+                </a-entity>
+
+                <!-- Steering Wheel -->
+                <a-torus id="steering-wheel" radius="0.15" radius-tubular="0.012" color="#151520" position="0 0.26 0.16" rotation="-20 0 0">
+                    <a-box width="0.3" height="0.02" depth="0.01" color="#111116"></a-box>
+                    <a-box width="0.02" height="0.3" depth="0.01" color="#111116"></a-box>
+                    <a-cylinder radius="0.03" height="0.03" rotation="90 0 0" color="#00ffcc" material="emissive: #00ffcc; emissiveIntensity: 0.2"></a-cylinder>
+                </a-torus>
+
+                <!-- Controls Help Label -->
+                <a-text value="DRIVE: W / S KEY  |  STEER: A / D KEY" align="center" position="0 0.05 0.152" scale="0.1 0.1 0.1" color="#00ffbb" font="mozillavr"></a-text>
+            </a-entity>
+
+            <!-- Camera sitting inside the rig -->
+            <a-camera id="camera" position="0 1.2 0" look-controls="pointerLockEnabled: false">
+                <!-- Visual pointer reticle for dashboard clicking -->
+                <a-cursor id="cursor" 
+                          cursor="fuse: true; fuseTimeout: 1200"
+                          material="color: #ff3333; shader: flat; opacity: 0.7" 
+                          geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.016"
+                          raycaster="objects: .clickable">
+                </a-cursor>
+
+                <!-- GAME OVER HUD OVERLAY (attached to camera, floating in front of face) -->
+                <a-entity id="game-over-panel" position="0 0 -1.2" visible="false">
+                    <!-- Semi-transparent red alert backdrop -->
+                    <a-plane width="1.6" height="0.8" material="color: #4a0000; opacity: 0.85; transparent: true; shader: flat"></a-plane>
+                    
+                    <!-- Glowing neon borders -->
+                    <a-plane width="1.62" height="0.015" position="0 0.4 0.001" material="color: #ff0055; shader: flat"></a-plane>
+                    <a-plane width="1.62" height="0.015" position="0 -0.4 0.001" material="color: #ff0055; shader: flat"></a-plane>
+                    <a-plane width="0.015" height="0.82" position="-0.81 0 0.001" material="color: #ff0055; shader: flat"></a-plane>
+                    <a-plane width="0.015" height="0.82" position="0.81 0 0.001" material="color: #ff0055; shader: flat"></a-plane>
+
+                    <!-- Warning details -->
+                    <a-text id="game-over-reason" value="COLLIDED!" align="center" position="0 0.22 0.002" scale="0.3 0.3 0.3" color="#ff3366" font="mozillavr"></a-text>
+                    <a-text value="GAME OVER" align="center" position="0 0.02 0.002" scale="0.45 0.45 0.45" color="#ffffff" font="mozillavr"></a-text>
+                    <a-text value="RESTARTING SCENE AUTOMATICALLY..." align="center" position="0 -0.2 0.002" scale="0.13 0.13 0.13" color="#ffea00" font="mozillavr"></a-text>
+                </a-entity>
+            </a-camera>
+        </a-entity>
+    </a-scene>
+
+    <button onclick="windows.location.href ='../index.html'">BACK</button>
+</body>
+
+</html>

@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MechVR — Hands-On Automobile Repair Simulator</title>
+<style>
+  :root{
+    --accent:#ff6a00; --accent2:#00e5ff; --bg:#05070a; --panel:#0d1117ee;
+    --panel2:#131a22; --good:#33ff88; --bad:#ff3b3b; --text:#e8eef4; --muted:#8ea0b0;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;width:100%;height:100%;background:var(--bg);overflow:hidden;
+    font-family:'Segoe UI',Arial,sans-serif;color:var(--text);}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;}
+  #ui{position:fixed;inset:0;z-index:5;pointer-events:none;}
+  .screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
+    justify-content:center;pointer-events:none;padding:18px;}
+  .screen.active{display:flex;}
+  .panel{pointer-events:auto;background:var(--panel);border:1px solid #2a3542;border-radius:16px;
+    padding:26px 30px;max-width:920px;width:100%;box-shadow:0 10px 40px #000a;backdrop-filter:blur(6px);}
+  h1{font-size:2.4em;margin:0 0 4px;letter-spacing:2px;color:var(--accent2);
+    text-shadow:0 0 18px #00e5ff55;}
+  h1 span{color:var(--accent);}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:1.02em;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;}
+  button{cursor:pointer;font-family:inherit;}
+  .btn{pointer-events:auto;background:linear-gradient(160deg,#1c2733,#101820);color:var(--text);
+    border:1px solid #34424f;border-radius:10px;padding:13px 22px;font-size:1em;font-weight:600;
+    letter-spacing:.5px;transition:.15s;}
+  .btn:hover{border-color:var(--accent2);box-shadow:0 0 16px #00e5ff44;transform:translateY(-1px);}
+  .btn.primary{background:linear-gradient(160deg,var(--accent),#b34c00);border-color:#ff8a3d;color:#fff;}
+  .btn.primary:hover{box-shadow:0 0 20px #ff6a0088;}
+  .btn.good{background:linear-gradient(160deg,#1f7a4a,#124b2c);border-color:#33ff88;}
+  .btn:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;
+    max-height:52vh;overflow-y:auto;padding:4px;}
+  .card{pointer-events:auto;background:var(--panel2);border:1px solid #2a3542;border-radius:12px;
+    padding:14px 10px;text-align:center;transition:.15s;}
+  .card:hover{border-color:var(--accent2);transform:translateY(-2px);box-shadow:0 6px 18px #00e5ff33;}
+  .card .icon{font-size:2.1em;}
+  .card .name{font-weight:700;margin-top:4px;}
+  .card .lvl{font-size:.78em;color:var(--accent2);margin-top:3px;}
+  .swatch{width:46px;height:46px;border-radius:50%;border:3px solid #333;cursor:pointer;
+    pointer-events:auto;transition:.15s;}
+  .swatch.sel{border-color:var(--accent2);box-shadow:0 0 14px #00e5ff99;transform:scale(1.12);}
+  #hud{position:absolute;inset:0;display:none;flex-direction:column;justify-content:space-between;
+    pointer-events:none;padding:14px;}
+  #hud.active{display:flex;}
+  .topbar{pointer-events:auto;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
+  .stat{background:var(--panel);border:1px solid #2a3542;border-radius:10px;padding:8px 14px;font-size:.92em;}
+  .stat b{color:var(--accent2);}
+  .instruct{pointer-events:auto;align-self:center;background:var(--panel);border:1px solid #2a3542;
+    border-radius:12px;padding:12px 20px;text-align:center;max-width:640px;font-size:1.02em;min-height:1.2em;}
+  .bottombar{pointer-events:auto;display:flex;justify-content:center;gap:12px;flex-wrap:wrap;}
+  #move-progress{display:flex;gap:6px;justify-content:center;margin-top:6px;}
+  .dot{width:12px;height:12px;border-radius:50%;background:#31414f;border:1px solid #4b5c6b;}
+  .dot.done{background:var(--good);border-color:var(--good);}
+  .modal{position:fixed;inset:0;z-index:20;background:#000a;display:flex;align-items:center;
+    justify-content:center;pointer-events:auto;}
+  .modal.hidden{display:none;}
+  .modal .panel{max-width:460px;}
+  .part-row{display:flex;justify-content:space-between;align-items:center;background:#0f151c;
+    border:1px solid #26313c;border-radius:10px;padding:10px 14px;margin-bottom:8px;}
+  #flash{position:fixed;inset:0;pointer-events:none;z-index:15;opacity:0;transition:opacity .25s;}
+  #flash.red{background:radial-gradient(circle,#ff2b2b55,#ff000022);}
+  #flash.green{background:radial-gradient(circle,#33ff8855,#00ff8822);}
+  #flash.show{opacity:1;}
+  .result-title{font-size:1.9em;margin-bottom:6px;}
+  .money-change{font-size:1.6em;font-weight:800;margin:10px 0;}
+  .money-change.pos{color:var(--good);}
+  .money-change.neg{color:var(--bad);}
+  #vrbtn{position:fixed;top:14px;right:14px;z-index:30;pointer-events:auto;}
+  .legend{font-size:.82em;color:var(--muted);margin-top:10px;line-height:1.5;}
+  ::-webkit-scrollbar{width:8px;}::-webkit-scrollbar-thumb{background:#2a3542;border-radius:4px;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="flash"></div>
+<button id="vrbtn" class="btn primary" style="display:none;">🥽 Enter VR</button>
+
+<div id="ui">
+
+  <!-- MENU -->
+  <div id="screen-menu" class="screen active">
+    <div class="panel" style="text-align:center;">
+      <h1>MECH<span>VR</span></h1>
+      <p class="sub">Hands‑On Automobile &amp; Vehicle Repair Simulator — Cars · Bikes · Planes · Jets · Spaceships</p>
+      <div class="row">
+        <button class="btn primary" id="btn-start">▶ Enter Garage</button>
+        <button class="btn" id="btn-howto">❓ How To Play</button>
+      </div>
+      <div class="legend">Works with mouse/touch on desktop &amp; mobile, and with VR headsets via WebXR (use the 🥽 button, top‑right).</div>
+    </div>
+  </div>
+
+  <!-- HOW TO -->
+  <div id="screen-howto" class="screen">
+    <div class="panel">
+      <h1 style="font-size:1.6em;">How To Play</h1>
+      <p class="sub" style="text-align:left;line-height:1.6;">
+      1. Pick a vehicle type, then a brand &amp; its latest model, then a paint color.<br>
+      2. You'll be placed in a repair bay next to the vehicle with its bay panel open.<br>
+      3. A translucent <b>Ghost Hand</b> demonstrates 5 repair movements, one at a time.<br>
+      4. Watch carefully, then repeat by clicking/tapping (or VR‑pointing at) the glowing bolts — do all 5.<br>
+      5. Higher levels add more rounds of 5 moves, and require the correct order.<br>
+      6. Some moves need a part bought from the <b>Shop</b> using CarBucks (₡).<br>
+      7. Hit <b>Start Engine</b> — get it right and the engine roars to life (+₡); get it wrong and it blows up (−₡).<br>
+      8. Fix 2 vehicles of a brand successfully to level up — each vehicle brand levels independently.
+      </p>
+      <div class="row"><button class="btn primary" id="btn-howto-back">Back</button></div>
+    </div>
+  </div>
+
+  <!-- CATEGORY -->
+  <div id="screen-category" class="screen">
+    <div class="panel">
+      <h1 style="font-size:1.7em;">Choose a Vehicle Type</h1>
+      <p class="sub">Every mechanic starts somewhere.</p>
+      <div class="grid" id="category-grid"></div>
+      <div class="row" style="margin-top:16px;">
+        <div class="stat">💰 <b id="money-cat">0</b> CarBucks</div>
+        <button class="btn" id="btn-cat-back">← Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BRAND -->
+  <div id="screen-brand" class="screen">
+    <div class="panel">
+      <h1 style="font-size:1.7em;" id="brand-title">Choose a Brand</h1>
+      <p class="sub">Each brand levels up on its own as you fix its vehicles.</p>
+      <div class="grid" id="brand-grid"></div>
+      <div class="row" style="margin-top:16px;">
+        <button class="btn" id="btn-brand-back">← Vehicle Types</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLOR -->
+  <div id="screen-color" class="screen">
+    <div class="panel" style="text-align:center;">
+      <h1 style="font-size:1.7em;" id="color-title">Pick a Color</h1>
+      <p class="sub" id="color-sub">Model</p>
+      <div class="row" id="color-grid" style="margin-bottom:18px;"></div>
+      <div class="row">
+        <button class="btn" id="btn-color-back">← Brands</button>
+        <button class="btn primary" id="btn-enter-bay">🔧 Enter Repair Bay</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div id="screen-result" class="screen">
+    <div class="panel" style="text-align:center;">
+      <div class="result-title" id="result-title">Result</div>
+      <div class="money-change" id="result-money"></div>
+      <p class="sub" id="result-sub"></p>
+      <div class="row">
+        <button class="btn" id="btn-result-brand">Same Brand Again</button>
+        <button class="btn primary" id="btn-result-menu">Vehicle Types</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPAIR HUD -->
+  <div id="hud">
+    <div class="topbar">
+      <div class="stat">💰 <b id="money-hud">0</b> ₡</div>
+      <div class="stat" id="vehicle-label">—</div>
+      <div class="stat">⭐ Level <b id="level-hud">1</b> · Round <b id="round-hud">1</b>/<b id="round-total">1</b></div>
+      <button class="btn" id="btn-shop">🛒 Shop</button>
+      <button class="btn" id="btn-exit-bay">✕ Leave Bay</button>
+    </div>
+    <div>
+      <div class="instruct" id="move-label">Get ready…</div>
+      <div id="move-progress"></div>
+    </div>
+    <div class="bottombar">
+      <button class="btn primary" id="btn-next" style="display:none;">Next ▶</button>
+      <button class="btn good" id="btn-start-engine" style="display:none;">🔑 Start Engine</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- SHOP MODAL -->
+<div id="shop-modal" class="modal hidden">
+  <div class="panel">
+    <h1 style="font-size:1.4em;">🛒 Parts Shop</h1>
+    <p class="sub">Some repair moves need a part in hand first.</p>
+    <div id="shop-list"></div>
+    <div class="row" style="margin-top:12px;"><button class="btn primary" id="btn-shop-close">Close</button></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================= DATA ============================= */
+const VEHICLE_DATA = {
+  cars: { label:'Cars', icon:'🚗', brands:[
+    {key:'bmw', name:'BMW', model:'M5 CS · 2026'},
+    {key:'koenigsegg', name:'Koenigsegg', model:'Jesko Absolut · 2026'},
+    {key:'audi', name:'Audi', model:'RS e-tron GT · 2026'},
+    {key:'pagani', name:'Pagani', model:'Utopia · 2026'},
+    {key:'lamborghini', name:'Lamborghini', model:'Revuelto · 2026'},
+    {key:'bugatti', name:'Bugatti', model:'Tourbillon · 2026'},
+    {key:'mclaren', name:'McLaren', model:'750S · 2026'},
+    {key:'porsche', name:'Porsche', model:'911 Turbo S · 2026'},
+    {key:'maruti', name:'Maruti Suzuki', model:'Jimny · 2026'},
+    {key:'toyota', name:'Toyota', model:'Land Cruiser · 2026'},
+    {key:'hyundai', name:'Hyundai', model:'Ioniq 6 · 2026'},
+    {key:'mahindra', name:'Mahindra', model:'Thar Roxx · 2026'},
+    {key:'tesla', name:'Tesla', model:'Model S Plaid · 2026'},
+    {key:'rangerover', name:'Range Rover', model:'Sport SV · 2026'},
+    {key:'tata', name:'Tata', model:'Curvv EV · 2026'},
+  ]},
+  bikes: { label:'Bikes', icon:'🏍️', brands:[
+    {key:'yamaha', name:'Yamaha', model:'R1M · 2026'},
+    {key:'kawasaki', name:'Kawasaki', model:'Ninja H2R · 2026'},
+    {key:'ducati', name:'Ducati', model:'Panigale V4 · 2026'},
+    {key:'royalenfield', name:'Royal Enfield', model:'Continental GT · 2026'},
+    {key:'harley', name:'Harley-Davidson', model:'Fat Bob · 2026'},
+  ]},
+  planes: { label:'Planes', icon:'✈️', brands:[
+    {key:'boeing', name:'Boeing', model:'787-10 Dreamliner'},
+    {key:'airbus', name:'Airbus', model:'A350-1000'},
+    {key:'cessna', name:'Cessna', model:'Citation Longitude'},
+  ]},
+  jets: { label:'Jets', icon:'🛩️', brands:[
+    {key:'skyhawk', name:'SkyHawk Aero', model:'X-9 Interceptor'},
+    {key:'raptorwing', name:'RaptorWing', model:'VR-2 Stealth'},
+  ]},
+  spaceships: { label:'Spaceships', icon:'🚀', brands:[
+    {key:'odyssey', name:'Odyssey Aerospace', model:'Odyssey-9 Voyager'},
+    {key:'novacorp', name:'NovaCorp', model:'Nova Falcon X'},
+  ]},
+};
+
+const COLORS = [
+  {name:'Racing Red', hex:0xd8102b}, {name:'Deep Black', hex:0x0a0a0a},
+  {name:'Pearl White', hex:0xf1f1f1}, {name:'Electric Blue', hex:0x0060ff},
+  {name:'Solar Yellow', hex:0xffd400}, {name:'British Green', hex:0x00512c},
+  {name:'Sunset Orange', hex:0xff6a00}, {name:'Gunmetal Grey', hex:0x4a4d52},
+  {name:'Carbon Matte', hex:0x2b2b2b}, {name:'Chrome Silver', hex:0xc7c9cc},
+];
+
+const HOTSPOT_LABELS = {
+  cars:       {A:'Loosen engine mount bolt', B:'Remove air filter cover', C:'Disconnect battery terminal', D:'Replace spark plug', E:'Reconnect wiring harness', F:'Tighten oil pan bolt'},
+  bikes:      {A:'Loosen chain-guard bolt', B:'Remove spark plug cap', C:'Disconnect brake line', D:'Replace spark plug', E:'Reconnect ignition wire', F:'Tighten engine mount bolt'},
+  planes:     {A:'Loosen engine cowl bolt', B:'Inspect propeller hub pin', C:'Open fuel access cap', D:'Replace igniter plug', E:'Reconnect avionics wire', F:'Tighten landing-gear bolt'},
+  jets:       {A:'Loosen turbine access panel', B:'Check afterburner nozzle pin', C:'Replace fuel line seal', D:'Replace igniter plug', E:'Reconnect radar wiring', F:'Tighten wing-flap bolt'},
+  spaceships: {A:'Loosen thruster housing bolt', B:'Swap fuel cell module', C:'Inspect heat-shield panel', D:'Replace ignition cell', E:'Reconnect hull wiring', F:'Tighten hull access panel'},
+};
+
+const PART_FOR_HOTSPOT = 'D'; // this move needs a purchased part
+const SHOP_PARTS = [
+  {key:'igniter', name:'Igniter / Spark Plug', price:150},
+  {key:'filter', name:'Air / Fuel Filter', price:120},
+  {key:'battery', name:'Battery Cell', price:200},
+];
+
+/* ============================= STATE ============================= */
+const state = {
+  money: 5000,
+  category:null, brandKey:null, brandName:'', modelName:'', colorHex:0xd8102b,
+  levels:{},              // brandKey -> {level, streak}
+  phase:'idle',           // idle | demo | awaiting_input | round_done | resolved
+  totalRounds:1, roundIdx:0,
+  roundsData:[],          // {order:[], playerOrder:[]}
+  activeHotspots:[],
+  purchased:new Set(),
+};
+
+function getLevelObj(key){
+  if(!state.levels[key]) state.levels[key] = {level:1, streak:0};
+  return state.levels[key];
+}
+
+/* ============================= PERSISTENCE ============================= */
+async function loadProgress(){
+  try{
+    const r = await window.storage.get('mechvr_progress');
+    if(r && r.value){
+      const d = JSON.parse(r.value);
+      if(typeof d.money === 'number') state.money = d.money;
+      if(d.levels) state.levels = d.levels;
+      if(d.purchased) state.purchased = new Set(d.purchased);
+    }
+  }catch(e){ /* no save yet, or storage unavailable — start fresh */ }
+}
+let saveTimer=null;
+function saveProgress(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{
+      await window.storage.set('mechvr_progress', JSON.stringify({
+        money: state.money, levels: state.levels, purchased:[...state.purchased]
+      }));
+    }catch(e){}
+  }, 400);
+}
+
+/* ============================= THREE SETUP ============================= */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+if(renderer.outputEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070a);
+scene.fog = new THREE.Fog(0x05070a, 12, 40);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.05, 200);
+camera.position.set(0,1.6,5);
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// lighting
+scene.add(new THREE.HemisphereLight(0x9fd8ff, 0x1a1008, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(4,7,3); scene.add(key);
+const rim = new THREE.PointLight(0x00e5ff, 1.2, 20); rim.position.set(-4,3,-3); scene.add(rim);
+const spot = new THREE.SpotLight(0xffe6c0, 1.1, 25, Math.PI/5, 0.4); spot.position.set(0,6,2); spot.target.position.set(0,0,0);
+scene.add(spot); scene.add(spot.target);
+
+// ---- orbit-style manual camera controls ----
+const orbit = { target:new THREE.Vector3(0,1,0), radius:5.5, az:0.5, pol:1.15, dragging:false, lastX:0, lastY:0 };
+function updateCamFromOrbit(){
+  const p = orbit.pol, a = orbit.az, r = orbit.radius;
+  camera.position.set(
+    orbit.target.x + r*Math.sin(p)*Math.sin(a),
+    orbit.target.y + r*Math.cos(p),
+    orbit.target.z + r*Math.sin(p)*Math.cos(a)
+  );
+  camera.lookAt(orbit.target);
+}
+updateCamFromOrbit();
+canvas.addEventListener('pointerdown', e=>{ orbit.dragging=true; orbit.lastX=e.clientX; orbit.lastY=e.clientY; });
+window.addEventListener('pointerup', ()=> orbit.dragging=false);
+window.addEventListener('pointermove', e=>{
+  if(!orbit.dragging) return;
+  const dx=e.clientX-orbit.lastX, dy=e.clientY-orbit.lastY;
+  orbit.lastX=e.clientX; orbit.lastY=e.clientY;
+  orbit.az -= dx*0.006; orbit.pol = Math.min(2.4, Math.max(0.35, orbit.pol - dy*0.006));
+  updateCamFromOrbit();
+});
+canvas.addEventListener('wheel', e=>{
+  orbit.radius = Math.min(14, Math.max(2.2, orbit.radius + e.deltaY*0.003));
+  updateCamFromOrbit();
+}, {passive:true});
+
+/* ============================= HELPERS ============================= */
+function wait(ms){ return new Promise(res=>setTimeout(res,ms)); }
+function tweenVal(from,to,duration,onUpdate){
+  return new Promise(res=>{
+    const start = performance.now();
+    function step(t){
+      const p = Math.min(1,(t-start)/duration);
+      const e = 1-Math.pow(1-p,3); // ease-out
+      onUpdate(from + (to-from)*e);
+      if(p<1) requestAnimationFrame(step); else res();
+    }
+    requestAnimationFrame(step);
+  });
+}
+function tweenPosition(obj, toVec, duration){
+  return new Promise(res=>{
+    const from = obj.position.clone();
+    const start = performance.now();
+    function step(t){
+      const p = Math.min(1,(t-start)/duration);
+      const e = 1-Math.pow(1-p,3);
+      obj.position.lerpVectors(from,toVec,e);
+      if(p<1) requestAnimationFrame(step); else res();
+    }
+    requestAnimationFrame(step);
+  });
+}
+function twistAnimation(obj,duration){
+  return new Promise(res=>{
+    const start = performance.now();
+    function step(t){
+      const p = (t-start)/duration;
+      obj.rotation.z = Math.sin(p*Math.PI*4)*0.45;
+      if(p<1) requestAnimationFrame(step); else { obj.rotation.z=0; res(); }
+    }
+    requestAnimationFrame(step);
+  });
+}
+function shuffled(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+/* ============================= MECH BAY (shared engine/access panel) ============================= */
+function addHotspots(parentGroup, positions){
+  const hotspots = {};
+  Object.keys(positions).forEach(id=>{
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055,12,12),
+      new THREE.MeshStandardMaterial({color:0xffcc33, emissive:0xffaa00, emissiveIntensity:0.6, metalness:0.3, roughness:0.4})
+    );
+    m.position.copy(positions[id]);
+    m.userData.hotspotId = id;
+    m.userData.baseColor = 0xffcc33;
+    m.name = 'hotspot_'+id;
+    parentGroup.add(m);
+    hotspots[id]=m;
+  });
+  return hotspots;
+}
+
+function buildMechBay(){
+  const bay = new THREE.Group();
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(1.15,0.5,0.95),
+    new THREE.MeshStandardMaterial({color:0x0c0e10, metalness:0.5, roughness:0.75}));
+  panel.position.y=-0.05; bay.add(panel);
+
+  const block = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.5),
+    new THREE.MeshStandardMaterial({color:0x5b6167, metalness:0.85, roughness:0.3}));
+  block.position.set(0,0.15,0); bay.add(block);
+
+  const glow = new THREE.Mesh(new THREE.BoxGeometry(0.52,0.04,0.52),
+    new THREE.MeshStandardMaterial({color:0x151515, emissive:0x00ff66, emissiveIntensity:0}));
+  glow.position.set(0,0.31,0); bay.add(glow);
+
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.15,0.028,8,16),
+    new THREE.MeshStandardMaterial({color:0x101010, metalness:0.2, roughness:0.8}));
+  belt.position.set(-0.36,0.15,0.3); belt.rotation.x = Math.PI/2; bay.add(belt);
+
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,0.1,14),
+    new THREE.MeshStandardMaterial({color:0xd8d8d8, metalness:0.6, roughness:0.35}));
+  cap.position.set(0.37,0.25,-0.3); bay.add(cap);
+
+  const wireMat = new THREE.MeshStandardMaterial({color:0xcc2222});
+  const wire = new THREE.Mesh(new THREE.TorusGeometry(0.1,0.012,6,12,Math.PI), wireMat);
+  wire.position.set(0.15,0.32,0.32); wire.rotation.x=Math.PI/2; bay.add(wire);
+
+  const positions = {
+    A:new THREE.Vector3(-0.30,0.33,0.24),
+    B:new THREE.Vector3( 0.30,0.33,0.24),
+    C:new THREE.Vector3(-0.30,0.33,-0.24),
+    D:new THREE.Vector3( 0.30,0.33,-0.24),
+    E:new THREE.Vector3( 0.00,0.42,0.00),
+    F:new THREE.Vector3( 0.00,0.05,0.38),
+  };
+  const hotspots = addHotspots(bay, positions);
+  return { bay, hotspots, glow };
+}
+
+/* ============================= VEHICLE BUILDERS ============================= */
+function stdMat(color, metalness=0.6, roughness=0.35){
+  return new THREE.MeshStandardMaterial({color, metalness, roughness});
+}
+
+function buildCarModel(color){
+  const group = new THREE.Group();
+  const bodyMat = stdMat(color,0.65,0.3);
+  const glassMat = new THREE.MeshStandardMaterial({color:0x10141a, metalness:0.9, roughness:0.1, transparent:true, opacity:0.75});
+  const darkMat = stdMat(0x161616,0.3,0.75);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4.3,0.85,1.9), bodyMat);
+  body.position.y=0.7; group.add(body);
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.6,1.7), bodyMat);
+  nose.position.set(2.0,0.62,0); group.add(nose);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.1,0.62,1.65), glassMat);
+  cabin.position.set(-0.25,1.28,0); group.add(cabin);
+
+  const wheelGeo = new THREE.CylinderGeometry(0.42,0.42,0.34,20); wheelGeo.rotateZ(Math.PI/2);
+  const wheels=[];
+  [[1.45,0.42,1.0],[1.45,0.42,-1.0],[-1.45,0.42,1.0],[-1.45,0.42,-1.0]].forEach(p=>{
+    const w = new THREE.Mesh(wheelGeo, darkMat); w.position.set(...p); group.add(w); wheels.push(w);
+  });
+
+  const hoodPivot = new THREE.Group(); hoodPivot.position.set(2.35,1.02,0); group.add(hoodPivot);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.35,0.1,1.75), bodyMat);
+  hood.position.set(-0.65,0,0); hoodPivot.add(hood);
+
+  const mech = buildMechBay();
+  mech.bay.position.set(1.85,0.95,0);
+  mech.bay.scale.set(1.3,1.3,1.3);
+  group.add(mech.bay);
+
+  return { group, hotspots:mech.hotspots, glow:mech.glow, wheels, openPivot:hoodPivot, openAxis:'x', openAngle:-1.3 };
+}
+
+function buildBikeModel(color){
+  const group = new THREE.Group();
+  const bodyMat = stdMat(color,0.6,0.3);
+  const darkMat = stdMat(0x151515,0.3,0.7);
+  const metalMat = stdMat(0xaaaaaa,0.85,0.25);
+
+  const frameGeo = new THREE.CylinderGeometry(0.06,0.06,1.6,10); frameGeo.rotateZ(Math.PI/2.6);
+  const frame = new THREE.Mesh(frameGeo, bodyMat); frame.position.set(0,0.75,0); group.add(frame);
+
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.32,0.4), bodyMat);
+  tank.position.set(0.15,1.0,0); group.add(tank);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.65,0.14,0.35), darkMat);
+  seat.position.set(-0.45,1.02,0); group.add(seat);
+
+  const wheelGeo = new THREE.TorusGeometry(0.42,0.08,10,20); wheelGeo.rotateY(Math.PI/2);
+  const wheels=[];
+  [[0.9,0.42,0],[-0.9,0.42,0]].forEach(p=>{
+    const w = new THREE.Mesh(wheelGeo, darkMat); w.position.set(...p); group.add(w); wheels.push(w);
+  });
+  const handlebar = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.7,8), metalMat);
+  handlebar.rotation.z=Math.PI/2; handlebar.position.set(0.85,1.15,0); group.add(handlebar);
+
+  const seatPivot = new THREE.Group(); seatPivot.position.set(-0.15,1.05,0); group.add(seatPivot);
+  const mech = buildMechBay();
+  mech.bay.position.set(-0.1,0.55,0);
+  mech.bay.scale.set(0.85,0.85,0.85);
+  group.add(mech.bay);
+
+  return { group, hotspots:mech.hotspots, glow:mech.glow, wheels, openPivot:seatPivot, openAxis:'x', openAngle:-0.9 };
+}
+
+function buildWingedModel(color, kind){
+  // shared body for planes / jets
+  const group = new THREE.Group();
+  const bodyMat = stdMat(color,0.7,0.25);
+  const darkMat = stdMat(0x1a1a1a,0.4,0.6);
+
+  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.28,3.6,16), bodyMat);
+  fuselage.rotation.z=Math.PI/2; fuselage.position.y=1.1; group.add(fuselage);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.32,14,14), bodyMat);
+  nose.position.set(1.9,1.1,0); nose.scale.set(1.1,0.8,0.8); group.add(nose);
+
+  const wingGeo = new THREE.BoxGeometry(0.9, 0.06, kind==='jet'?3.4:2.6);
+  const wing = new THREE.Mesh(wingGeo, bodyMat); wing.position.set(-0.2,1.0,0); group.add(wing);
+  const tailWing = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.05,1.2), bodyMat);
+  tailWing.position.set(-1.65,1.25,0); group.add(tailWing);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.6,0.06), bodyMat);
+  fin.position.set(-1.7,1.5,0); group.add(fin);
+
+  const podGeo = new THREE.CylinderGeometry(0.16,0.16,0.6,12); podGeo.rotateZ(Math.PI/2);
+  [[-0.2,0.75,0.9],[-0.2,0.75,-0.9]].forEach(p=>{
+    const pod = new THREE.Mesh(podGeo, darkMat); pod.position.set(...p); group.add(pod);
+  });
+
+  const hatchPivot = new THREE.Group(); hatchPivot.position.set(0.1,1.25,0); group.add(hatchPivot);
+  const hatch = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.05,0.7), bodyMat);
+  hatch.position.set(0,0,0); hatchPivot.add(hatch);
+
+  const mech = buildMechBay();
+  mech.bay.position.set(0.1,1.05,0);
+  mech.bay.scale.set(1.0,1.0,1.0);
+  group.add(mech.bay);
+
+  return { group, hotspots:mech.hotspots, glow:mech.glow, wheels:[], openPivot:hatchPivot, openAxis:'z', openAngle:1.2, propPods:true };
+}
+
+function buildSpaceshipModel(color){
+  const group = new THREE.Group();
+  const bodyMat = stdMat(color,0.75,0.2);
+  const darkMat = stdMat(0x141414,0.5,0.5);
+  const glowMat = new THREE.MeshStandardMaterial({color:0x113344, emissive:0x00e5ff, emissiveIntensity:0.6});
+
+  const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.65,2.6,16), bodyMat);
+  hull.position.set(0,1.1,0); hull.rotation.z=Math.PI/2; group.add(hull);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.45,14,14), bodyMat);
+  nose.position.set(1.55,1.1,0); nose.scale.set(1,1,1); group.add(nose);
+  const finGeo = new THREE.BoxGeometry(0.06,0.7,0.9);
+  [[-1.15,1.1,0.5],[-1.15,1.1,-0.5]].forEach(p=>{
+    const f = new THREE.Mesh(finGeo, darkMat); f.position.set(...p); group.add(f);
+  });
+  const thrusterGeo = new THREE.CylinderGeometry(0.18,0.24,0.4,14); thrusterGeo.rotateZ(Math.PI/2);
+  [[-1.35,0.85,0.35],[-1.35,0.85,-0.35],[-1.35,1.35,0]].forEach(p=>{
+    const th = new THREE.Mesh(thrusterGeo, darkMat); th.position.set(...p); group.add(th);
+    const flame = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.02,0.3,10), glowMat);
+    flame.rotation.z=Math.PI/2; flame.position.set(p[0]-0.28,p[1],p[2]); group.add(flame);
+  });
+
+  const hatchPivot = new THREE.Group(); hatchPivot.position.set(0.3,1.45,0); group.add(hatchPivot);
+  const hatch = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.05,0.6), bodyMat);
+  hatchPivot.add(hatch);
+
+  const mech = buildMechBay();
+  mech.bay.position.set(0.3,1.25,0);
+  group.add(mech.bay);
+
+  return { group, hotspots:mech.hotspots, glow:mech.glow, wheels:[], openPivot:hatchPivot, openAxis:'z', openAngle:1.2 };
+}
+
+function buildVehicleModel(category, colorHex){
+  if(category==='cars') return buildCarModel(colorHex);
+  if(category==='bikes') return buildBikeModel(colorHex);
+  if(category==='planes') return buildWingedModel(colorHex,'plane');
+  if(category==='jets') return buildWingedModel(colorHex,'jet');
+  if(category==='spaceships') return buildSpaceshipModel(colorHex);
+}
+
+function recolorVehicle(vehicle, colorHex){
+  vehicle.group.traverse(o=>{
+    if(o.isMesh && o.userData.hotspotId===undefined && o.material && o.material.metalness>=0.55 && o.material.metalness<=0.8 && o.material.emissiveIntensity===0){
+      // leave as-is; recoloring handled at build time via rebuild for simplicity
+    }
+  });
+}
+
+/* ============================= ROOM ============================= */
+function buildRoom(){
+  const room = new THREE.Group();
+  const floorMat = new THREE.MeshStandardMaterial({color:0x14181d, metalness:0.2, roughness:0.85});
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(9,32), floorMat);
+  floor.rotation.x=-Math.PI/2; room.add(floor);
+
+  const gridHelper = new THREE.GridHelper(18,18,0x2a3542,0x1a2129);
+  gridHelper.position.y=0.001; room.add(gridHelper);
+
+  const wallMat = new THREE.MeshStandardMaterial({color:0x0c1015, metalness:0.1, roughness:0.9});
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(9,9,6,32,1,true), wallMat);
+  wall.position.y=3; wall.material.side=THREE.BackSide; room.add(wall);
+
+  // tool cabinets flavor
+  for(let i=0;i<3;i++){
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(0.8,1.1,0.5), new THREE.MeshStandardMaterial({color:0xb23b1e,metalness:0.5,roughness:0.4}));
+    cab.position.set(-6+i*0.9, 0.55, -6.5); room.add(cab);
+  }
+  // ceiling lamps (visual only)
+  for(const x of [-3,0,3]){
+    const lampMesh = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.08,0.3), new THREE.MeshStandardMaterial({color:0x222222, emissive:0xfff3cf, emissiveIntensity:0.9}));
+    lampMesh.position.set(x,4.6,-1); room.add(lampMesh);
+  }
+  return room;
+}
+const room = buildRoom();
+scene.add(room);
+
+/* ============================= GHOST HAND ============================= */
+function buildGhostHand(){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({color:0x39d0ff, transparent:true, opacity:0.55, depthWrite:false});
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.05,0.16), mat);
+  g.add(palm);
+  for(let i=0;i<4;i++){
+    const finger = new THREE.Mesh(new THREE.BoxGeometry(0.025,0.025,0.11), mat);
+    finger.position.set(-0.04+i*0.027, 0, 0.12);
+    g.add(finger);
+  }
+  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.03,0.03,0.08), mat);
+  thumb.position.set(-0.08,0,0.02); thumb.rotation.y=0.7; g.add(thumb);
+  g.visible = false;
+  scene.add(g);
+  return g;
+}
+const ghostHand = buildGhostHand();
+
+async function ghostDemoSequence(order){
+  ghostHand.visible = true;
+  for(let i=0;i<order.length;i++){
+    const id = order[i];
+    const hs = currentVehicle.hotspots[id];
+    setMoveLabel(`👻 Ghost Hand demonstrating ${i+1}/${order.length}: ${HOTSPOT_LABELS[state.category][id]}`);
+    const wp = new THREE.Vector3(); hs.getWorldPosition(wp); wp.y += 0.12;
+    await tweenPosition(ghostHand, wp, 650);
+    await twistAnimation(ghostHand, 480);
+    flashHotspot(hs);
+    await wait(280);
+  }
+  ghostHand.visible = false;
+}
+function flashHotspot(hs){
+  hs.material.emissiveIntensity = 1.6;
+  setTimeout(()=>{ if(hs.material) hs.material.emissiveIntensity = 0.6; }, 380);
+}
+
+/* ============================= RAYCAST / INPUT ============================= */
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+
+function currentClickable(){
+  if(state.phase!=='awaiting_input') return [];
+  return state.activeHotspots
+    .filter(id => !currentRoundData().playerOrder.includes(id))
+    .map(id => currentVehicle.hotspots[id]);
+}
+function currentRoundData(){ return state.roundsData[state.roundIdx]; }
+
+canvas.addEventListener('click', e=>{
+  if(state.phase!=='awaiting_input') return;
+  const rect = canvas.getBoundingClientRect();
+  mouseNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  mouseNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const hits = raycaster.intersectObjects(currentClickable());
+  if(hits.length) handleHotspotHit(hits[0].object);
+});
+
+async function handleHotspotHit(mesh){
+  const id = mesh.userData.hotspotId;
+  if(id===PART_FOR_HOTSPOT && !state.purchased.has(activePartKeyFor(id))){
+    openShop(`You need a part for "${HOTSPOT_LABELS[state.category][id]}" first!`);
+    return;
+  }
+  mesh.material.color.set(0x33ff88);
+  mesh.material.emissive.set(0x33ff88);
+  mesh.material.emissiveIntensity = 1;
+  await twistAnimation(mesh, 400);
+  currentRoundData().playerOrder.push(id);
+  updateProgressDots();
+  if(currentRoundData().playerOrder.length >= state.activeHotspots.length){
+    state.phase = 'round_done';
+    if(state.roundIdx < state.totalRounds-1){
+      document.getElementById('btn-next').style.display='inline-block';
+      setMoveLabel('Round complete! Click Next ▶ to continue.');
+    } else {
+      document.getElementById('btn-start-engine').style.display='inline-block';
+      setMoveLabel('All rounds complete! Ready to start the engine?');
+    }
+  } else {
+    setMoveLabel(`Nice. ${currentRoundData().playerOrder.length}/${state.activeHotspots.length} moves done — keep going.`);
+  }
+}
+function activePartKeyFor(id){ return SHOP_PARTS[0].key; } // spark-plug-type move needs 'igniter'
+
+/* WebXR controller */
+const controller = renderer.xr.getController(0);
+scene.add(controller);
+const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-4)]);
+const rayLine = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({color:0x39d0ff}));
+controller.add(rayLine);
+controller.addEventListener('select', ()=>{
+  if(state.phase!=='awaiting_input') return;
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tempMatrix);
+  const hits = raycaster.intersectObjects(currentClickable());
+  if(hits.length) handleHotspotHit(hits[0].object);
+});
+
+/* ============================= VR BUTTON ============================= */
+const vrBtn = document.getElementById('vrbtn');
+if(navigator.xr){
+  navigator.xr.isSessionSupported('immersive-vr').then(ok=>{
+    if(ok) vrBtn.style.display='inline-block';
+  }).catch(()=>{});
+}
+vrBtn.addEventListener('click', async ()=>{
+  try{
+    const session = await navigator.xr.requestSession('immersive-vr', {optionalFeatures:['local-floor','bounded-floor']});
+    renderer.xr.setSession(session);
+    session.addEventListener('end', ()=>{});
+  }catch(e){ alert('Could not start VR session on this device.'); }
+});
+
+/* ============================= PARTICLE FX ============================= */
+function burst(position, colors, count, spread, life){
+  const group = new THREE.Group();
+  const parts=[];
+  for(let i=0;i<count;i++){
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05+Math.random()*0.07,0),
+      new THREE.MeshBasicMaterial({color: colors[Math.floor(Math.random()*colors.length)], transparent:true}));
+    m.position.copy(position);
+    const vel = new THREE.Vector3((Math.random()-0.5)*spread,(Math.random())*spread,(Math.random()-0.5)*spread);
+    parts.push({m,vel});
+    group.add(m);
+  }
+  scene.add(group);
+  const start = performance.now();
+  function step(t){
+    const dt = 0.016;
+    const p = (t-start)/life;
+    parts.forEach(o=>{
+      o.vel.y -= 2.2*dt;
+      o.m.position.addScaledVector(o.vel, dt);
+      o.m.material.opacity = Math.max(0,1-p);
+    });
+    if(p<1) requestAnimationFrame(step); else scene.remove(group);
+  }
+  requestAnimationFrame(step);
+}
+function screenFlash(color){
+  const el = document.getElementById('flash');
+  el.className=''; void el.offsetWidth;
+  el.classList.add(color,'show');
+  setTimeout(()=>el.classList.remove('show'), 500);
+}
+
+/* ============================= RENDER LOOP ============================= */
+let currentVehicle = null;
+const clock = new THREE.Clock();
+let engineRunning = false;
+renderer.setAnimationLoop(()=>{
+  const dt = clock.getDelta();
+  if(currentVehicle && currentVehicle.wheels && engineRunning){
+    currentVehicle.wheels.forEach(w=> w.rotation.x += dt*14);
+  }
+  if(currentVehicle && currentVehicle.glow && engineRunning){
+    currentVehicle.glow.material.emissiveIntensity = 0.8 + Math.sin(performance.now()*0.01)*0.6;
+  }
+  renderer.render(scene, camera);
+});
+
+/* ============================= SCREEN NAV ============================= */
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('hud').classList.remove('active');
+  if(id==='hud'){ document.getElementById('hud').classList.add('active'); }
+  else document.getElementById(id).classList.add('active');
+}
+
+document.getElementById('btn-start').onclick = ()=>{ renderCategoryGrid(); document.getElementById('money-cat').textContent=state.money; showScreen('screen-category'); };
+document.getElementById('btn-howto').onclick = ()=> showScreen('screen-howto');
+document.getElementById('btn-howto-back').onclick = ()=> showScreen('screen-menu');
+document.getElementById('btn-cat-back').onclick = ()=> showScreen('screen-menu');
+document.getElementById('btn-brand-back').onclick = ()=>{ renderCategoryGrid(); showScreen('screen-category'); };
+document.getElementById('btn-color-back').onclick = ()=>{ renderBrandGrid(); showScreen('screen-brand'); };
+
+function renderCategoryGrid(){
+  const grid = document.getElementById('category-grid');
+  grid.innerHTML='';
+  Object.keys(VEHICLE_DATA).forEach(catKey=>{
+    const cat = VEHICLE_DATA[catKey];
+    const card = document.createElement('div');
+    card.className='card';
+    card.innerHTML = `<div class="icon">${cat.icon}</div><div class="name">${cat.label}</div>`;
+    card.onclick = ()=>{ state.category=catKey; document.getElementById('brand-title').textContent=`${cat.icon} ${cat.label} — Choose a Brand`; renderBrandGrid(); showScreen('screen-brand'); };
+    grid.appendChild(card);
+  });
+}
+
+function renderBrandGrid(){
+  const grid = document.getElementById('brand-grid');
+  grid.innerHTML='';
+  VEHICLE_DATA[state.category].brands.forEach(b=>{
+    const lvl = getLevelObj(b.key);
+    const card = document.createElement('div');
+    card.className='card';
+    card.innerHTML = `<div class="icon">🔧</div><div class="name">${b.name}</div><div style="font-size:.78em;color:var(--muted);">${b.model}</div><div class="lvl">Lvl ${lvl.level}</div>`;
+    card.onclick = ()=>{
+      state.brandKey=b.key; state.brandName=b.name; state.modelName=b.model;
+      document.getElementById('color-title').textContent=`${b.name}`;
+      document.getElementById('color-sub').textContent=b.model;
+      renderColorGrid();
+      showScreen('screen-color');
+    };
+    grid.appendChild(card);
+  });
+}
+
+function renderColorGrid(){
+  const grid = document.getElementById('color-grid');
+  grid.innerHTML='';
+  COLORS.forEach((c,i)=>{
+    const sw = document.createElement('div');
+    sw.className='swatch'+(i===0?' sel':'');
+    sw.style.background = '#'+c.hex.toString(16).padStart(6,'0');
+    sw.title = c.name;
+    sw.onclick = ()=>{
+      document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('sel'));
+      sw.classList.add('sel');
+      state.colorHex = c.hex;
+    };
+    grid.appendChild(sw);
+  });
+  state.colorHex = COLORS[0].hex;
+}
+
+document.getElementById('btn-enter-bay').onclick = ()=> enterRepairBay();
+
+/* ============================= REPAIR FLOW ============================= */
+async function enterRepairBay(){
+  showScreen('hud');
+  engineRunning = false;
+  if(currentVehicle) scene.remove(currentVehicle.group);
+  currentVehicle = buildVehicleModel(state.category, state.colorHex);
+  currentVehicle.group.position.set(0,0,-1.2);
+  scene.add(currentVehicle.group);
+  orbit.target.set(0,1,-1.2); orbit.radius=5; orbit.az=0.4; orbit.pol=1.1; updateCamFromOrbit();
+
+  const lvl = getLevelObj(state.brandKey);
+  state.totalRounds = Math.min(4, lvl.level);
+  state.roundIdx = 0;
+  state.roundsData = [];
+  state.purchased = state.purchased; // keep across attempts in same session
+  document.getElementById('vehicle-label').textContent = `${state.brandName} ${state.modelName}`;
+  document.getElementById('level-hud').textContent = lvl.level;
+  document.getElementById('round-total').textContent = state.totalRounds;
+  document.getElementById('money-hud').textContent = state.money;
+  document.getElementById('btn-next').style.display='none';
+  document.getElementById('btn-start-engine').style.display='none';
+
+  // open the access panel
+  if(currentVehicle.openPivot){
+    const pivot = currentVehicle.openPivot;
+    const axis = currentVehicle.openAxis;
+    tweenVal(0, currentVehicle.openAngle, 900, v=>{ pivot.rotation[axis]=v; });
+  }
+
+  setMoveLabel('Get ready — the Ghost Hand will demonstrate the first repair sequence…');
+  await wait(500);
+  runRound(0);
+}
+
+function setMoveLabel(txt){ document.getElementById('move-label').textContent = txt; }
+
+function updateProgressDots(){
+  const wrap = document.getElementById('move-progress');
+  wrap.innerHTML='';
+  const total = state.activeHotspots.length;
+  const done = currentRoundData() ? currentRoundData().playerOrder.length : 0;
+  for(let i=0;i<total;i++){
+    const d = document.createElement('div');
+    d.className='dot'+(i<done?' done':'');
+    wrap.appendChild(d);
+  }
+}
+
+async function runRound(idx){
+  state.roundIdx = idx;
+  state.phase='demo';
+  document.getElementById('round-hud').textContent = idx+1;
+  document.getElementById('btn-next').style.display='none';
+  document.getElementById('btn-start-engine').style.display='none';
+
+  const order = shuffled(['A','B','C','D','E','F']).slice(0,5);
+  state.roundsData[idx] = {order, playerOrder:[]};
+  state.activeHotspots = order.slice();
+  updateProgressDots();
+
+  // reset hotspot visuals for new round
+  Object.values(currentVehicle.hotspots).forEach(hs=>{
+    hs.material.color.set(hs.userData.baseColor);
+    hs.material.emissive.set(0xffaa00);
+    hs.material.emissiveIntensity = 0.6;
+  });
+
+  await ghostDemoSequence(order);
+  state.phase='awaiting_input';
+  updateProgressDots();
+  setMoveLabel(`Your turn — repeat all ${order.length} movements (${state.category==='cars'||state.category==='bikes'?'':''}${getLevelObj(state.brandKey).level>=2?'order matters!':'any order'}).`);
+}
+
+document.getElementById('btn-next').onclick = ()=>{
+  if(state.roundIdx < state.totalRounds-1) runRound(state.roundIdx+1);
+};
+
+document.getElementById('btn-start-engine').onclick = ()=> resolveRepair();
+
+async function resolveRepair(){
+  state.phase='resolved';
+  document.getElementById('btn-start-engine').style.display='none';
+  document.getElementById('btn-next').style.display='none';
+  setMoveLabel('Turning the key…');
+  await wait(700);
+
+  const lvl = getLevelObj(state.brandKey);
+  const orderMatters = lvl.level >= 2;
+  let success = true;
+  state.roundsData.forEach(r=>{
+    if(orderMatters){
+      const ok = r.order.length===r.playerOrder.length && r.order.every((id,i)=>id===r.playerOrder[i]);
+      if(!ok) success=false;
+    }
+  });
+
+  const bayWorld = new THREE.Vector3();
+  currentVehicle.hotspots.A.getWorldPosition(bayWorld);
+
+  if(success){
+    engineRunning = true;
+    burst(bayWorld, [0x33ff88,0xffd400,0x00e5ff], 26, 2.2, 1100);
+    screenFlash('green');
+    const gain = 400*lvl.level;
+    state.money += gain;
+    lvl.streak++;
+    let leveledUp=false;
+    if(lvl.streak>=2){ lvl.level++; lvl.streak=0; leveledUp=true; }
+    saveProgress();
+    document.getElementById('money-hud').textContent = state.money;
+    await wait(1200);
+    showResult(true, gain, leveledUp, lvl.level);
+  } else {
+    burst(bayWorld, [0xff6a00,0xff3b3b,0x552200], 40, 3.4, 1300);
+    screenFlash('red');
+    const loss = Math.min(state.money, 250*lvl.level);
+    state.money -= loss;
+    lvl.streak = 0;
+    saveProgress();
+    document.getElementById('money-hud').textContent = state.money;
+    await wait(1300);
+    showResult(false, loss, false, lvl.level);
+  }
+}
+
+function showResult(success, amount, leveledUp, newLevel){
+  document.getElementById('result-title').textContent = success ? '✅ Engine Started!' : '💥 It Blew Up!';
+  document.getElementById('result-title').style.color = success ? 'var(--good)' : 'var(--bad)';
+  const mc = document.getElementById('result-money');
+  mc.textContent = (success?'+':'-') + '₡' + amount;
+  mc.className = 'money-change ' + (success?'pos':'neg');
+  document.getElementById('result-sub').textContent = leveledUp
+    ? `${state.brandName} leveled up to Level ${newLevel}! Repairs will get more complex.`
+    : (success ? 'Great work — the vehicle runs perfectly.' : 'The wiring order was wrong and something shorted out. Try again.');
+  showScreen('screen-result');
+}
+
+document.getElementById('btn-result-brand').onclick = ()=> enterRepairBay();
+document.getElementById('btn-result-menu').onclick = ()=>{ renderCategoryGrid(); document.getElementById('money-cat').textContent=state.money; showScreen('screen-category'); };
+document.getElementById('btn-exit-bay').onclick = ()=>{ renderCategoryGrid(); document.getElementById('money-cat').textContent=state.money; showScreen('screen-category'); };
+
+/* ============================= SHOP ============================= */
+function renderShopList(){
+  const list = document.getElementById('shop-list');
+  list.innerHTML='';
+  SHOP_PARTS.forEach(p=>{
+    const owned = state.purchased.has(p.key);
+    const row = document.createElement('div');
+    row.className='part-row';
+    row.innerHTML = `<span>${p.name}</span>`;
+    const btn = document.createElement('button');
+    btn.className='btn'+(owned?'':' primary');
+    btn.textContent = owned ? 'Owned ✓' : `Buy ₡${p.price}`;
+    btn.disabled = owned || state.money < p.price;
+    btn.onclick = ()=>{
+      if(state.money>=p.price && !owned){
+        state.money -= p.price;
+        state.purchased.add(p.key);
+        document.getElementById('money-hud').textContent = state.money;
+        saveProgress();
+        renderShopList();
+      }
+    };
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+function openShop(msg){
+  renderShopList();
+  document.getElementById('shop-modal').classList.remove('hidden');
+  if(msg) setTimeout(()=>{ if(document.getElementById('shop-modal').classList.contains('hidden')===false) {} }, 0);
+  if(msg) document.getElementById('move-label').textContent = msg;
+}
+document.getElementById('btn-shop').onclick = ()=> openShop();
+document.getElementById('btn-shop-close').onclick = ()=> document.getElementById('shop-modal').classList.add('hidden');
+
+/* ============================= INIT ============================= */
+(async function init(){
+  await loadProgress();
+  updateCamFromOrbit();
+})();
+</script>
+<button onclick="window.location.href= '../index.html'">BACK</button>
+</body>
+</html>
